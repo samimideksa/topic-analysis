@@ -12,17 +12,27 @@ import random
 import datetime
 import time
 import json
+import pandas as pd
+import numpy as np
 
 sys.path.append(str(pathlib.Path(os.path.abspath('')).parents[1])+'/plsa/plsa')
 sys.path.append(str(pathlib.Path(os.path.abspath('')).parents[1])+'/plsa/preprocessing')
 
+sys.path.append(str(pathlib.Path(os.path.abspath('')).parents[2])+'/people-analytics/wundt/source')
+# sys.path.append(str(pathlib.Path(os.path.abspath('')).parents[2])+'/people-analytics/wundt/source')
+
 import example_plsa as pplsa
 import cleansing as pclean
+from textblob import TextBlob
+from ast import literal_eval
+
+# from TopicAugument import TopicAugument
 
 class TopicAnalysis:
 
-    def __init__(self, docs):
+    def __init__(self, docs, channel):
 
+        self.channel = channel
         self.docs = docs
         self.root_path = str(pathlib.Path(os.path.abspath('')).parents[2]) + '/appData/plsa/'
         print(self.root_path)
@@ -36,19 +46,12 @@ class TopicAnalysis:
         self.plsa_parameters_path = self.root_path + 'plsa-parameters/'
         self.PLSA_PARAMETERS_PATH = ''
 
-        # self.messages
-        # self.unique_folder_naming
-
     def __del__(self):
 
         # Close db connections
         pass
 
-
-
     def write_to_json(self):
-
-
 
         self.unique_folder_naming = str(datetime.datetime.now()).replace(':','-').replace('.','-') + '^' + str(random.randint(100000000000, 999999999999)) + '/'
         print(self.unique_folder_naming)
@@ -67,6 +70,41 @@ class TopicAnalysis:
 
         print("len(contents_dict):",len(contents_dict))
 
+
+    def create_sentiment(self):
+        data = pd.read_csv("slack_messages.csv", sep=",", quotechar='"')
+        source_content = data["source-content"]
+        output = {"id": [], "text": []}
+        for i in range(len(data.index)):
+            sc = data.iloc[i]["source-content"]
+            sc_dict = literal_eval(sc)
+            # if sc_dict["subtype"] == "chat" and sc_dict["channel_name"] == self.channel:
+            if sc_dict["subtype"] == "chat" and sc_dict["channel_name"] == self.channel:
+                data_id = data.iloc[i]["id"]
+                output["id"].append(data_id)
+                output["text"].append(sc_dict["text"])
+            else:
+                continue
+        new_df = pd.DataFrame(output)
+        print(new_df.head())
+        df = pd.read_csv(pplsa.PLSA_PARAMETERS_PATH + 'topic-by-doc-matirx.csv', sep=',')
+        df.drop(df.columns[[0]], axis=1, inplace=True)
+        print(type(df))
+        df = df.T
+
+        arr = self.docs
+        print(type(arr))
+        sentiments = []
+        for i in range (0, len(arr)):
+           sentiments.append(TextBlob(arr[i]).sentiment.polarity)
+        print(type(sentiments))
+        df2 = pd.DataFrame(sentiments)
+        df2.insert(0, 'doc_id', np.arange(1, len(df2) + 1))
+        df2 = df2.rename(columns={0:'value'})
+        df2.doc_id = new_df.id
+        df2.to_csv('singnet_sentiment.csv', index=False, sep='\t')
+        print(df2)
+        return df
 
 
     def generate_topics_json(self):
@@ -87,7 +125,7 @@ class TopicAnalysis:
 
         # Train using PLSA
         pplsa.topic_divider = 0
-        pplsa.num_topics = 2
+        pplsa.num_topics = 5
         pplsa.folder = pclean.output_dir[:-1]
         pplsa.dict_path = pclean.file_dict
         pplsa.PLSA_PARAMETERS_PATH = self.plsa_parameters_path + self.unique_folder_naming
@@ -100,8 +138,6 @@ class TopicAnalysis:
         self.output_dir_stream = pclean.output_dir
         self.file_dict_stream = pclean.file_dict
 
-
-
         os.mkdir(pplsa.PLSA_PARAMETERS_PATH)
 
         pplsa.main()
@@ -113,10 +149,9 @@ class TopicAnalysis:
 
 
 
-
 def run_plsa():
 
-    path = ''
+    path = '/home/samuel/projects/snet/appData/extracted.json'
 
     docs = []
 
@@ -130,7 +165,6 @@ def run_plsa():
     s = TopicAnalysis(docs)
     s.write_to_json()
     s.generate_topics_json()
-
 
 
 __end__ = '__end__'
